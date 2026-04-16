@@ -1,0 +1,71 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "corpus-leggi-tools"
+version = "0.1.0"
+description = "Pipeline di ingestion per il dataset corpus-leggi da Normattiva OpenData."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [{ name = "Francesco Fera", email = "francescofera157@gmail.com" }]
+keywords = ["normattiva", "leggi", "italia", "markdown", "akoma-ntoso", "open-data"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Legal Industry",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: Italian",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Text Processing :: Markup",
+]
+dependencies = [
+    "normattiva2md>=2.1.10",
+    "requests>=2.32",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+    "mypy>=1.8",
+    "types-requests",
+    "types-PyYAML",
+]
+
+[project.scripts]
+corpus-leggi-sync = "corpus_leggi_tools.sync_delta:main"
+corpus-leggi-bulk = "corpus_leggi_tools.bulk_load:main"
+
+[project.urls]
+Homepage = "https://github.com/Francesco-Fera/corpus-leggi-tools"
+Dataset = "https://github.com/Francesco-Fera/corpus-leggi"
+Issues = "https://github.com/Francesco-Fera/corpus-leggi-tools/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]  # line length managed by formatter
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_unused_ignores = true
+show_error_codes = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
