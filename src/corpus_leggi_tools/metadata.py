@@ -15,18 +15,22 @@ from pathlib import Path
 from normattiva2md.constants import AKN_NAMESPACE
 from normattiva2md.xml_parser import extract_metadata_from_xml
 
+_DPR = ("DECRETO DEL PRESIDENTE DELLA REPUBBLICA", "decreto-presidente-repubblica")
+_DPCM = ("DECRETO DEL PRESIDENTE DEL CONSIGLIO DEI MINISTRI", "dpcm")
+
+# Normattiva usa due forme URN per alcuni atti: una compatta
+# (``decreto.presidente.repubblica``) e una estesa con ``del/della/dei``
+# (``decreto.del.presidente.della.repubblica``). Entrambe vanno mappate alla
+# stessa denominazione + slug, altrimenti gli atti finiscono in directory
+# diverse a seconda di quale forma è nel meta AKN.
 URN_TYPE_TO_DENOM: dict[str, tuple[str, str]] = {
     "legge": ("LEGGE", "legge"),
     "decreto.legge": ("DECRETO-LEGGE", "decreto-legge"),
     "decreto.legislativo": ("DECRETO LEGISLATIVO", "decreto-legislativo"),
-    "decreto.presidente.repubblica": (
-        "DECRETO DEL PRESIDENTE DELLA REPUBBLICA",
-        "decreto-presidente-repubblica",
-    ),
-    "decreto.presidente.consiglio.ministri": (
-        "DECRETO DEL PRESIDENTE DEL CONSIGLIO DEI MINISTRI",
-        "dpcm",
-    ),
+    "decreto.presidente.repubblica": _DPR,
+    "decreto.del.presidente.della.repubblica": _DPR,
+    "decreto.presidente.consiglio.ministri": _DPCM,
+    "decreto.del.presidente.del.consiglio.dei.ministri": _DPCM,
     "decreto.ministeriale": ("DECRETO MINISTERIALE", "decreto-ministeriale"),
     "decreto": ("DECRETO", "decreto"),
     "legge.costituzionale": ("LEGGE COSTITUZIONALE", "legge-costituzionale"),

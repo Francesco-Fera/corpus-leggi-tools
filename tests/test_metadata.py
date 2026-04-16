@@ -186,9 +186,23 @@ class TestUrnTypeMapping:
         assert URN_TYPE_TO_DENOM["decreto.presidente.consiglio.ministri"][1] == "dpcm"
 
     def test_denominazione_maiuscolo(self) -> None:
-        # Tutte le denominazioni sono in uppercase (stile Normattiva)
         for denom, _ in URN_TYPE_TO_DENOM.values():
             assert denom == denom.upper(), f"denominazione non maiuscola: {denom!r}"
+
+    def test_dpr_both_urn_forms_map_to_same_dir(self) -> None:
+        # Normattiva restituisce 'decreto.del.presidente.della.repubblica' nei
+        # meta AKN ma accetta 'decreto.presidente.repubblica' come handle URL.
+        # Entrambe devono mappare allo stesso slug/denominazione.
+        assert (
+            URN_TYPE_TO_DENOM["decreto.presidente.repubblica"]
+            == URN_TYPE_TO_DENOM["decreto.del.presidente.della.repubblica"]
+        )
+
+    def test_dpcm_both_urn_forms_map_to_same_dir(self) -> None:
+        assert (
+            URN_TYPE_TO_DENOM["decreto.presidente.consiglio.ministri"]
+            == URN_TYPE_TO_DENOM["decreto.del.presidente.del.consiglio.dei.ministri"]
+        )
 
 
 class TestXMLExtraction:
