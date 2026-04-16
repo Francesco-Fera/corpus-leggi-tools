@@ -151,3 +151,33 @@ def build_urn_from_updated(atto: AttoAggiornato) -> str:
         f"{atto['giorno_provvedimento']:02d}"
     )
     return f"urn:nir:stato:{urn_type}:{data_iso};{atto['numero_provvedimento']}"
+
+
+def yyyymmdd_to_iso(raw: str) -> str | None:
+    """``20180127`` → ``2018-01-27``. None se formato diverso o sentinella 99999999."""
+    if not raw or len(raw) != 8 or not raw.isdigit() or raw == "99999999":
+        return None
+    return f"{raw[:4]}-{raw[4:6]}-{raw[6:8]}"
+
+
+def fetch_articolo_vigenza(
+    articolo_urn: str, *, timeout: float = 30.0
+) -> str | None:
+    """Ritorna ``articoloDataInizioVigenza`` (ISO ``YYYY-MM-DD``) per un URN articolo.
+
+    L'URN deve includere il suffisso ``~artN`` (es. ``...;82~art3bis``).
+    Ritorna ``None`` se la risposta è vuota, il campo mancante, o la data ha
+    formato non riconosciuto.
+
+    Note: ``articoloDataFineVigenza`` è sempre ``99999999`` nel dataset osservato
+    (Normattiva non espone data fine reale anche per articoli abrogati — per
+    l'abrogazione ci affidiamo al marker nel testo, vedi ``detect_abrogation``).
+    """
+    url = f"{NORMATTIVA_API_BASE}/atto/dettaglio-atto-urn"
+    response = requests.post(
+        url, json={"urn": articolo_urn}, headers=DEFAULT_HEADERS, timeout=timeout
+    )
+    response.raise_for_status()
+    data = response.json()
+    atto = (data.get("data") or {}).get("atto") or {}
+    return yyyymmdd_to_iso(atto.get("articoloDataInizioVigenza", ""))
