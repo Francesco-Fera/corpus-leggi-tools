@@ -25,61 +25,67 @@ def strip_ondata_front_matter(md: str) -> str:
     return md[end + 4 :].lstrip("\n")
 
 
-def normalize_article_heading(body: str) -> tuple[str, str]:
-    """Converte il titolo dell'articolo in ``# Art. N — Rubrica`` (H1 unificato).
+_EXTS = "bis|ter|quater|quinquies|sexies|septies|octies|novies|decies"
+# Il numero articolo nel raw ondata: "3", "3-bis", "64-quater", "3 bis"...
+_ARTICLE_NUM_PATTERN = rf"\d+(?:[-\s](?:{_EXTS}))*"
+
+
+def format_article_display_num(num: str) -> str:
+    """``3bis`` → ``3-bis`` per rendering leggibile nel titolo H1."""
+    m = re.match(rf"^(\d+)({_EXTS})$", num)
+    return f"{m.group(1)}-{m.group(2)}" if m else num
+
+
+def normalize_article_heading(body: str, num: str) -> tuple[str, str]:
+    """Converte il titolo dell'articolo in ``# Art. {display_num} — Rubrica``.
 
     Ondata produce due varianti a seconda della sorgente:
-      1. ``## Art. N. - Rubrica`` (inline)
-      2. ``## Art. N.`` seguito da riga vuota + rubrica su riga separata
+      1. ``## Art. N. - Rubrica`` (inline, separatore ``\\s-\\s``)
+      2. ``## Art. N.`` seguito da riga vuota + rubrica
+
+    Il numero può contenere ``-bis``, ``-ter``, ecc. (es. ``Art. 3-bis. - …``).
+    Il separatore verso la rubrica richiede spazi attorno al ``-`` per
+    distinguerlo dal dash interno al numero.
+
+    ``num`` è la forma compatta (es. ``3bis``); usiamo la sua display form
+    nel titolo rigenerato — ignoriamo il numero presente nel raw.
 
     Ritorna (body_normalizzato, rubrica_estratta). Rubrica vuota se assente.
     """
+    display = format_article_display_num(num)
     rubrica = ""
 
-    def repl_inline(m: re.Match[str]) -> str:
-        nonlocal rubrica
-        num = m.group(1).rstrip(".").strip()
-        rubrica = m.group(2).strip().rstrip(".")
-        return f"# Art. {num} — {rubrica}"
-
-    new_body, n = re.subn(
-        r"^#{2,4}\s*Art\.\s*([^\n]*?)\s*-\s*([^\n]+)$",
-        repl_inline,
-        body,
-        count=1,
-        flags=re.MULTILINE,
+    inline = re.compile(
+        rf"^#{{2,4}}\s*Art\.\s*{_ARTICLE_NUM_PATTERN}\s*\.?\s+-\s+([^\n]+)$",
+        re.MULTILINE,
     )
-    if n:
-        return new_body, rubrica
+    m = inline.search(body)
+    if m:
+        rubrica = m.group(1).strip().rstrip(".")
+        body = inline.sub(f"# Art. {display} — {rubrica}", body, count=1)
+        return body, rubrica
 
-    def repl_multiline(m: re.Match[str]) -> str:
-        nonlocal rubrica
-        num = m.group(1).rstrip(".").strip()
+    multiline = re.compile(
+        rf"^(#{{2,4}}\s*Art\.\s*{_ARTICLE_NUM_PATTERN}\s*\.?\s*)\n\s*\n([^\n]+)$",
+        re.MULTILINE,
+    )
+    m = multiline.search(body)
+    if m:
         candidate = m.group(2).strip().rstrip(".")
-        # Se la riga successiva è già un comma numerato o una lista, niente rubrica.
-        if re.match(r"^\d+[\.\)]\s", candidate) or candidate.startswith(("- ", "* ")):
-            return m.group(0)
-        rubrica = candidate
-        return f"# Art. {num} — {rubrica}"
+        is_comma_or_list = bool(
+            re.match(r"^\d+[\.\)]\s", candidate)
+        ) or candidate.startswith(("- ", "* "))
+        if not is_comma_or_list:
+            rubrica = candidate
+            body = multiline.sub(f"# Art. {display} — {rubrica}", body, count=1)
+            return body, rubrica
 
-    new_body, n = re.subn(
-        r"^#{2,4}\s*Art\.\s*(\S+?)\.?\s*\n\s*\n([^\n]+)$",
-        repl_multiline,
-        body,
-        count=1,
-        flags=re.MULTILINE,
+    solo = re.compile(
+        rf"^#{{2,4}}\s*Art\.\s*{_ARTICLE_NUM_PATTERN}\s*\.?\s*$",
+        re.MULTILINE,
     )
-    if n and rubrica:
-        return new_body, rubrica
-
-    new_body = re.sub(
-        r"^#{2,4}\s*Art\.\s*([^\n]+?)\.?\s*$",
-        lambda m: f"# Art. {m.group(1).rstrip('.').strip()}",
-        body,
-        count=1,
-        flags=re.MULTILINE,
-    )
-    return new_body, rubrica
+    body = solo.sub(f"# Art. {display}", body, count=1)
+    return body, rubrica
 
 
 def yaml_scalar(value: str) -> str:
@@ -91,7 +97,7 @@ def build_article_md(
     atto: AttoMetadata, num: str, body_md: str, today: str
 ) -> tuple[str, str]:
     body = strip_ondata_front_matter(body_md)
-    body, rubrica = normalize_article_heading(body)
+    body, rubrica = normalize_article_heading(body, num)
     articolo_urn = f"{atto.urn}~art{num}"
     rubrica_yaml = yaml_scalar(rubrica) if rubrica else "null"
     front = f"""---
