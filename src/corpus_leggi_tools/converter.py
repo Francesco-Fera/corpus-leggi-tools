@@ -10,10 +10,40 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import NamedTuple
 
 from normattiva2md import convert_xml
 
 from .metadata import AttoMetadata
+
+
+class ArticoloMeta(NamedTuple):
+    """Metadati post-conversione di un articolo per consumo dall'indexer."""
+
+    rubrica: str          # vuota se articolo abrogato o senza rubrica
+    abrogato: bool
+    abrogato_da: str | None
+
+
+_ABROGATION_RE = re.compile(
+    r"^\(\(\s*ARTICOLO\s+(?:ABROGATO|SOPPRESSO)\s+DAL\s+(.+?)\s*\)\)\.?\s*$",
+    re.IGNORECASE,
+)
+
+
+def detect_abrogation(rubrica_raw: str) -> tuple[bool, str | None]:
+    """Rileva rubriche prodotte da ondata per articoli abrogati/soppressi.
+
+    Il pattern è ``((ARTICOLO ABROGATO DAL <atto>))`` (oppure ``SOPPRESSO``).
+    Ritorna ``(True, "<atto>")`` se matcha, ``(False, None)`` altrimenti.
+
+    Quando abrogato la rubrica originale va scartata: rappresentiamo il fatto
+    con un campo ``abrogato_da`` dedicato + ``vigente: false``.
+    """
+    m = _ABROGATION_RE.match(rubrica_raw.strip())
+    if m is None:
+        return False, None
+    return True, m.group(1).strip().rstrip(".")
 
 
 def strip_ondata_front_matter(md: str) -> str:
@@ -95,11 +125,29 @@ def yaml_scalar(value: str) -> str:
 
 def build_article_md(
     atto: AttoMetadata, num: str, body_md: str, today: str
-) -> tuple[str, str]:
+) -> tuple[str, ArticoloMeta]:
     body = strip_ondata_front_matter(body_md)
-    body, rubrica = normalize_article_heading(body, num)
+    body, rubrica_raw = normalize_article_heading(body, num)
+    abrogato, abrogato_da = detect_abrogation(rubrica_raw) if rubrica_raw else (False, None)
+
+    if abrogato:
+        # Gli articoli abrogati non hanno contenuto oltre al marker di
+        # abrogazione: rimpiazziamo l'intero body con un H1 pulito + callout.
+        display = format_article_display_num(num)
+        body = (
+            f"# Art. {display}\n\n"
+            f"> **Articolo abrogato** — {abrogato_da}\n"
+        )
+        rubrica_for_fm = ""
+    else:
+        rubrica_for_fm = rubrica_raw
+
     articolo_urn = f"{atto.urn}~art{num}"
-    rubrica_yaml = yaml_scalar(rubrica) if rubrica else "null"
+    rubrica_yaml = yaml_scalar(rubrica_for_fm) if rubrica_for_fm else "null"
+    abrogato_line = (
+        f"  abrogato_da: {yaml_scalar(abrogato_da)}\n" if abrogato and abrogato_da else ""
+    )
+    vigente_yaml = "false" if abrogato else "true"
     front = f"""---
 atto:
   titolo: {yaml_scalar(atto.titolo)}
@@ -113,18 +161,23 @@ articolo:
   numero: "{num}"
   urn: {articolo_urn}
   rubrica: {rubrica_yaml}
-vigente: true
+{abrogato_line}vigente: {vigente_yaml}
 aggiornato_al: {today}
 fonte: normattiva.it
 licenza: CC-BY-4.0
 ---
 
 """
-    return front + body.strip() + "\n", rubrica
+    meta = ArticoloMeta(
+        rubrica=rubrica_for_fm, abrogato=abrogato, abrogato_da=abrogato_da
+    )
+    return front + body.strip() + "\n", meta
 
 
 def build_index_md(
-    atto: AttoMetadata, articles: list[tuple[str, str]], today: str
+    atto: AttoMetadata,
+    articles: list[tuple[str, ArticoloMeta]],
+    today: str,
 ) -> str:
     front = f"""---
 titolo: {yaml_scalar(atto.titolo)}
@@ -152,20 +205,25 @@ licenza: CC-BY-4.0
 
 """
     lines: list[str] = []
-    for num, rubrica in articles:
+    for num, meta in articles:
         display = format_article_display_num(num)
-        label = f"Art. {display}" + (f" — {rubrica}" if rubrica else "")
+        if meta.abrogato:
+            label = f"Art. {display} _(abrogato)_"
+        elif meta.rubrica:
+            label = f"Art. {display} — {meta.rubrica}"
+        else:
+            label = f"Art. {display}"
         lines.append(f"- [{label}](art-{num}.md)")
     return front + "\n".join(lines) + "\n"
 
 
 def convert_article_to_md(
     xml_path: Path, atto: AttoMetadata, num: str, today: str
-) -> tuple[str, str] | None:
+) -> tuple[str, ArticoloMeta] | None:
     """Full pipeline per un articolo: ondata + post-processing.
 
-    Ritorna (markdown_finale, rubrica) oppure ``None`` se l'articolo non è
-    presente nell'XML.
+    Ritorna ``(markdown_finale, ArticoloMeta)`` oppure ``None`` se l'articolo
+    non è presente nell'XML.
     """
     result = convert_xml(str(xml_path), article=num, quiet=True)
     if result is None:

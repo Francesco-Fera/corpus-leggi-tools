@@ -1,14 +1,20 @@
 from __future__ import annotations
 
 from corpus_leggi_tools.converter import (
+    ArticoloMeta,
     build_article_md,
     build_index_md,
+    detect_abrogation,
     format_article_display_num,
     normalize_article_heading,
     strip_ondata_front_matter,
     yaml_scalar,
 )
 from corpus_leggi_tools.metadata import AttoMetadata
+
+
+def _meta(rubrica: str = "") -> ArticoloMeta:
+    return ArticoloMeta(rubrica=rubrica, abrogato=False, abrogato_da=None)
 
 
 def _demo_atto() -> AttoMetadata:
@@ -150,57 +156,108 @@ class TestNormalizeArticleHeading:
         assert rubrica == "((ARTICOLO ABROGATO DAL D.LGS. 26 AGOSTO 2016, N. 179))"
 
 
+class TestDetectAbrogation:
+    def test_abrogato(self) -> None:
+        raw = "((ARTICOLO ABROGATO DAL D.LGS. 26 AGOSTO 2016, N. 179))"
+        assert detect_abrogation(raw) == (True, "D.LGS. 26 AGOSTO 2016, N. 179")
+
+    def test_soppresso(self) -> None:
+        raw = "((ARTICOLO SOPPRESSO DAL D.LGS. 30 DICEMBRE 2010, N. 235))"
+        assert detect_abrogation(raw) == (True, "D.LGS. 30 DICEMBRE 2010, N. 235")
+
+    def test_case_insensitive(self) -> None:
+        raw = "((articolo abrogato dal D.LGS. 26 AGOSTO 2016, N. 179))"
+        matched, _ = detect_abrogation(raw)
+        assert matched is True
+
+    def test_trailing_period_tolerated(self) -> None:
+        raw = "((ARTICOLO ABROGATO DAL D.LGS. 26 AGOSTO 2016, N. 179))."
+        matched, source = detect_abrogation(raw)
+        assert matched is True
+        assert source == "D.LGS. 26 AGOSTO 2016, N. 179"
+
+    def test_non_abrogation_rubric(self) -> None:
+        assert detect_abrogation("Definizioni") == (False, None)
+        assert detect_abrogation("(Agenzia per l'Italia digitale)") == (False, None)
+        assert detect_abrogation("(((Diritto alla trasparenza).))") == (False, None)
+
+    def test_empty(self) -> None:
+        assert detect_abrogation("") == (False, None)
+
+
 class TestBuildArticleMd:
     def test_basic_structure(self) -> None:
         body = "## Art. 1. - Definizioni\n\n1. Testo."
-        md, rubrica = build_article_md(_demo_atto(), "1", body, "2026-04-16")
+        md, meta = build_article_md(_demo_atto(), "1", body, "2026-04-16")
 
-        assert rubrica == "Definizioni"
+        assert meta == ArticoloMeta(rubrica="Definizioni", abrogato=False, abrogato_da=None)
         assert "# Art. 1 — Definizioni" in md
         assert 'numero: "1"' in md
         assert "urn: urn:nir:stato:legge:2024-12-13;203~art1" in md
         assert 'rubrica: "Definizioni"' in md
+        assert "vigente: true" in md
         assert "licenza: CC-BY-4.0" in md
         assert "fonte: normattiva.it" in md
         assert "aggiornato_al: 2026-04-16" in md
+        assert "abrogato_da:" not in md
 
     def test_bis_article(self) -> None:
         body = "## Art. 3-bis. - Identita' digitale\n\n1. Testo."
-        md, _rubrica = build_article_md(_demo_atto(), "3bis", body, "2026-04-16")
+        md, meta = build_article_md(_demo_atto(), "3bis", body, "2026-04-16")
 
+        assert meta.rubrica == "Identita' digitale"
+        assert not meta.abrogato
         assert "# Art. 3-bis — Identita' digitale" in md
         assert 'numero: "3bis"' in md
         assert "urn: urn:nir:stato:legge:2024-12-13;203~art3bis" in md
 
     def test_strips_ondata_front_matter(self) -> None:
         body = "---\nlegal_notice: foo\nurl: bar\n---\n\n## Art. 1. - Def\n\n1. Testo."
-        md, _rubrica = build_article_md(_demo_atto(), "1", body, "2026-04-16")
+        md, _meta = build_article_md(_demo_atto(), "1", body, "2026-04-16")
 
-        # Il front matter di ondata non deve sopravvivere nel body finale
-        assert md.count("---\n") == 2  # solo il nostro front matter
+        assert md.count("---\n") == 2
         assert "legal_notice" not in md
 
     def test_no_rubrica_yields_null(self) -> None:
         body = "## Art. 91.\n\n1. Senza rubrica."
-        md, rubrica = build_article_md(_demo_atto(), "91", body, "2026-04-16")
+        md, meta = build_article_md(_demo_atto(), "91", body, "2026-04-16")
 
-        assert rubrica == ""
+        assert meta.rubrica == ""
+        assert not meta.abrogato
         assert "rubrica: null" in md
 
     def test_body_not_modified_beyond_heading(self) -> None:
         body = "## Art. 1. - Definizioni\n\n1. Ai fini del presente codice.\n\n2. Secondo comma."
-        md, _rubrica = build_article_md(_demo_atto(), "1", body, "2026-04-16")
+        md, _meta = build_article_md(_demo_atto(), "1", body, "2026-04-16")
 
         assert "1. Ai fini del presente codice." in md
         assert "2. Secondo comma." in md
 
+    def test_abrogated_article(self) -> None:
+        body = "## Art. 4.\n\n((ARTICOLO ABROGATO DAL D.LGS. 26 AGOSTO 2016, N. 179))"
+        md, meta = build_article_md(_demo_atto(), "4", body, "2026-04-16")
+
+        assert meta.abrogato is True
+        assert meta.abrogato_da == "D.LGS. 26 AGOSTO 2016, N. 179"
+        assert meta.rubrica == ""
+        assert "# Art. 4" in md and "ABROGATO" not in md.splitlines()[md.splitlines().index("# Art. 4")]
+        assert "vigente: false" in md
+        assert 'abrogato_da: "D.LGS. 26 AGOSTO 2016, N. 179"' in md
+        assert "rubrica: null" in md
+        assert "> **Articolo abrogato**" in md
+
+    def test_soppressed_article(self) -> None:
+        body = "## Art. 7.\n\n((ARTICOLO SOPPRESSO DAL D.LGS. 30 DICEMBRE 2010, N. 235))"
+        md, meta = build_article_md(_demo_atto(), "7", body, "2026-04-16")
+
+        assert meta.abrogato is True
+        assert meta.abrogato_da == "D.LGS. 30 DICEMBRE 2010, N. 235"
+        assert "vigente: false" in md
+
 
 class TestBuildIndexMd:
     def test_basic(self) -> None:
-        articles: list[tuple[str, str]] = [
-            ("1", "Definizioni"),
-            ("2", "Ambito"),
-        ]
+        articles = [("1", _meta("Definizioni")), ("2", _meta("Ambito"))]
         md = build_index_md(_demo_atto(), articles, "2026-04-16")
 
         assert "numero_articoli: 2" in md
@@ -210,19 +267,27 @@ class TestBuildIndexMd:
         assert "**Disposizioni in materia di lavoro**" in md
 
     def test_bis_uses_display_form_in_label_but_target_stays_compact(self) -> None:
-        articles: list[tuple[str, str]] = [("3bis", "Identita' digitale")]
+        articles = [("3bis", _meta("Identita' digitale"))]
         md = build_index_md(_demo_atto(), articles, "2026-04-16")
 
         assert "- [Art. 3-bis — Identita' digitale](art-3bis.md)" in md
 
     def test_article_without_rubric(self) -> None:
-        articles: list[tuple[str, str]] = [("42", "")]
+        articles = [("42", _meta(""))]
         md = build_index_md(_demo_atto(), articles, "2026-04-16")
 
         assert "- [Art. 42](art-42.md)" in md
 
+    def test_abrogated_article_label(self) -> None:
+        articles = [
+            ("4", ArticoloMeta(rubrica="", abrogato=True, abrogato_da="D.LGS. 26 AGOSTO 2016, N. 179"))
+        ]
+        md = build_index_md(_demo_atto(), articles, "2026-04-16")
+
+        assert "- [Art. 4 _(abrogato)_](art-4.md)" in md
+
     def test_url_permanente_used_when_available(self) -> None:
-        md = build_index_md(_demo_atto(), [("1", "Def")], "2026-04-16")
+        md = build_index_md(_demo_atto(), [("1", _meta("Def"))], "2026-04-16")
         assert "(https://www.normattiva.it/perm)" in md
 
     def test_url_fallback_when_no_permanente(self) -> None:
@@ -230,5 +295,5 @@ class TestBuildIndexMd:
         atto_no_perm = AttoMetadata(
             **{**atto.__dict__, "url_permanente": ""}  # type: ignore[arg-type]
         )
-        md = build_index_md(atto_no_perm, [("1", "Def")], "2026-04-16")
+        md = build_index_md(atto_no_perm, [("1", _meta("Def"))], "2026-04-16")
         assert "(https://www.normattiva.it/x)" in md

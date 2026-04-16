@@ -17,7 +17,7 @@ import xml.etree.ElementTree as ET
 from datetime import date, timedelta
 from pathlib import Path
 
-from .converter import build_index_md, convert_article_to_md
+from .converter import ArticoloMeta, build_index_md, convert_article_to_md
 from .metadata import (
     AttoMetadata,
     atto_directory,
@@ -71,7 +71,7 @@ def _process_atto(
     root = ET.parse(final_xml).getroot()
     eids = list_article_eids(root)
     rel_dir = atto_directory(atto)
-    articles_meta: list[tuple[str, str]] = []
+    articles_meta: list[tuple[str, ArticoloMeta]] = []
     written_before = writer.stats["written"]
     skipped_before = writer.stats["skipped"]
 
@@ -80,9 +80,9 @@ def _process_atto(
         result = convert_article_to_md(final_xml, atto, num, today)
         if result is None:
             continue
-        md, rubrica = result
+        md, art_meta = result
         writer.write_if_changed(f"{rel_dir}/art-{num}.md", md)
-        articles_meta.append((num, rubrica))
+        articles_meta.append((num, art_meta))
 
     writer.write_if_changed(
         f"{rel_dir}/_index.md", build_index_md(atto, articles_meta, today)
