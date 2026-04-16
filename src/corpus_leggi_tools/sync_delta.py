@@ -13,7 +13,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import time
 import xml.etree.ElementTree as ET
 from datetime import date, timedelta
 from pathlib import Path
@@ -30,13 +29,9 @@ from .normattiva_client import (
     build_url_from_urn,
     build_urn_from_updated,
     download_akn_by_urn,
-    fetch_articolo_vigenza,
     search_updated,
 )
 from .repo_writer import RepoWriter
-
-# Pausa tra chiamate API (IPZS raccomanda 300ms).
-API_PAUSE_SEC = 0.3
 
 LAST_SYNC_REL_PATH = "data/last_sync.json"
 
@@ -82,18 +77,7 @@ def _process_atto(
 
     for eid in eids:
         num = eid_to_article_num(eid)
-        articolo_urn = f"{atto.urn}~art{num}"
-        try:
-            vigenza_inizio = fetch_articolo_vigenza(articolo_urn)
-        except Exception as e:
-            # Soft-fail: se la chiamata vigenza fallisce non blocchiamo il
-            # processing dell'articolo, lo scriviamo senza il campo.
-            print(f"    WARN fetch vigenza {articolo_urn}: {e}", file=sys.stderr)
-            vigenza_inizio = None
-        time.sleep(API_PAUSE_SEC)
-        result = convert_article_to_md(
-            final_xml, atto, num, today, vigenza_inizio=vigenza_inizio
-        )
+        result = convert_article_to_md(final_xml, atto, num, today)
         if result is None:
             continue
         md, art_meta = result

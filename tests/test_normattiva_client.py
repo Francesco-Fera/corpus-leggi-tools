@@ -10,7 +10,6 @@ from corpus_leggi_tools.normattiva_client import (
     build_url_from_urn,
     build_urn_from_updated,
     search_updated,
-    yyyymmdd_to_iso,
 )
 
 
@@ -119,23 +118,3 @@ class TestSearchUpdatedValidation:
     def test_interval_over_12_months_raises(self) -> None:
         with pytest.raises(ValueError, match="12 mesi"):
             search_updated(date(2024, 1, 1), date(2025, 6, 1))
-
-
-class TestYyyymmddToIso:
-    def test_basic(self) -> None:
-        assert yyyymmdd_to_iso("20180127") == "2018-01-27"
-        assert yyyymmdd_to_iso("20240113") == "2024-01-13"
-
-    def test_sentinella_99999999_returns_none(self) -> None:
-        # Normattiva usa 99999999 come "data fine aperta": per noi = None
-        assert yyyymmdd_to_iso("99999999") is None
-
-    def test_empty_returns_none(self) -> None:
-        assert yyyymmdd_to_iso("") is None
-
-    def test_wrong_length_returns_none(self) -> None:
-        assert yyyymmdd_to_iso("2018-01-27") is None
-        assert yyyymmdd_to_iso("2018") is None
-
-    def test_non_numeric_returns_none(self) -> None:
-        assert yyyymmdd_to_iso("2018ABCD") is None

@@ -29,5 +29,6 @@ Thumbs.db
 
 # Local pipeline artifacts
 xml_cache/
+.xml_cache/
 output/
 *.log

@@ -254,30 +254,6 @@ class TestBuildArticleMd:
         assert meta.abrogato_da == "D.LGS. 30 DICEMBRE 2010, N. 235"
         assert "vigente: false" in md
 
-    def test_vigenza_inizio_included_when_provided(self) -> None:
-        body = "## Art. 1. - Definizioni\n\n1. Testo."
-        md, _meta = build_article_md(
-            _demo_atto(), "1", body, "2026-04-16", vigenza_inizio="2018-01-27"
-        )
-        assert 'vigenza_inizio: "2018-01-27"' in md
-
-    def test_vigenza_inizio_omitted_when_none(self) -> None:
-        body = "## Art. 1. - Definizioni\n\n1. Testo."
-        md, _meta = build_article_md(_demo_atto(), "1", body, "2026-04-16")
-        assert "vigenza_inizio" not in md
-
-    def test_vigenza_inizio_on_abrogated_still_included(self) -> None:
-        # Se l'API fornisce una vigenza_inizio anche per articoli abrogati,
-        # la scriviamo lo stesso: rappresenta "da quando questa versione del
-        # testo (inclusa la riga di abrogazione) è in vigore".
-        body = "## Art. 4.\n\n((ARTICOLO ABROGATO DAL D.LGS. 26 AGOSTO 2016, N. 179))"
-        md, meta = build_article_md(
-            _demo_atto(), "4", body, "2026-04-16", vigenza_inizio="2016-09-14"
-        )
-        assert meta.abrogato is True
-        assert 'vigenza_inizio: "2016-09-14"' in md
-        assert "vigente: false" in md
-
 
 class TestBuildIndexMd:
     def test_basic(self) -> None:

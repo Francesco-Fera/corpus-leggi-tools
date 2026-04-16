@@ -124,12 +124,7 @@ def yaml_scalar(value: str) -> str:
 
 
 def build_article_md(
-    atto: AttoMetadata,
-    num: str,
-    body_md: str,
-    today: str,
-    *,
-    vigenza_inizio: str | None = None,
+    atto: AttoMetadata, num: str, body_md: str, today: str
 ) -> tuple[str, ArticoloMeta]:
     body = strip_ondata_front_matter(body_md)
     body, rubrica_raw = normalize_article_heading(body, num)
@@ -149,9 +144,6 @@ def build_article_md(
 
     articolo_urn = f"{atto.urn}~art{num}"
     rubrica_yaml = yaml_scalar(rubrica_for_fm) if rubrica_for_fm else "null"
-    vigenza_line = (
-        f"  vigenza_inizio: {yaml_scalar(vigenza_inizio)}\n" if vigenza_inizio else ""
-    )
     abrogato_line = (
         f"  abrogato_da: {yaml_scalar(abrogato_da)}\n" if abrogato and abrogato_da else ""
     )
@@ -169,7 +161,7 @@ articolo:
   numero: "{num}"
   urn: {articolo_urn}
   rubrica: {rubrica_yaml}
-{vigenza_line}{abrogato_line}vigente: {vigente_yaml}
+{abrogato_line}vigente: {vigente_yaml}
 aggiornato_al: {today}
 fonte: normattiva.it
 licenza: CC-BY-4.0
@@ -226,12 +218,7 @@ licenza: CC-BY-4.0
 
 
 def convert_article_to_md(
-    xml_path: Path,
-    atto: AttoMetadata,
-    num: str,
-    today: str,
-    *,
-    vigenza_inizio: str | None = None,
+    xml_path: Path, atto: AttoMetadata, num: str, today: str
 ) -> tuple[str, ArticoloMeta] | None:
     """Full pipeline per un articolo: ondata + post-processing.
 
@@ -241,6 +228,4 @@ def convert_article_to_md(
     result = convert_xml(str(xml_path), article=num, quiet=True)
     if result is None:
         return None
-    return build_article_md(
-        atto, num, result.markdown, today, vigenza_inizio=vigenza_inizio
-    )
+    return build_article_md(atto, num, result.markdown, today)
