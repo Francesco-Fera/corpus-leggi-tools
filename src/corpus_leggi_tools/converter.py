@@ -153,7 +153,8 @@ licenza: CC-BY-4.0
 """
     lines: list[str] = []
     for num, rubrica in articles:
-        label = f"Art. {num}" + (f" — {rubrica}" if rubrica else "")
+        display = format_article_display_num(num)
+        label = f"Art. {display}" + (f" — {rubrica}" if rubrica else "")
         lines.append(f"- [{label}](art-{num}.md)")
     return front + "\n".join(lines) + "\n"
 
