@@ -50,25 +50,31 @@ def _download_to_tmp(urn: str, xml_cache: Path) -> Path:
     return tmp_path
 
 
-def _process_atto(
-    urn: str,
-    dataset_root: Path,
-    xml_cache: Path,
+def process_atto_from_xml(
+    xml_path: Path,
     writer: RepoWriter,
     today: str,
+    *,
+    atto: AttoMetadata | None = None,
+    fallback_url: str = "",
 ) -> tuple[int, int]:
-    """Sync di un singolo atto dentro un writer già istanziato.
+    """Conversione AKN XML → Markdown + scrittura nel dataset.
+
+    Core riusabile sia dal delta sync (dopo il download via URN) sia dal bulk
+    load (su XML estratti dagli ZIP IPZS). Non sposta/copia ``xml_path``:
+    assume che il chiamante l'abbia già piazzato dove desidera.
+
+    ``atto`` può essere passato pre-parsato per evitare double-parse.
+    ``fallback_url`` viene usato solo se ``atto`` è None.
 
     Ritorna (articoli_scritti, articoli_skippati).
     """
-    tmp_xml = _download_to_tmp(urn, xml_cache)
-    atto = build_metadata_from_xml(tmp_xml, fallback_url=build_url_from_urn(urn))
-    final_xml = _xml_cache_path(xml_cache, atto)
-    tmp_xml.replace(final_xml)
+    if atto is None:
+        atto = build_metadata_from_xml(xml_path, fallback_url=fallback_url)
 
     print(f"  {atto.denominazione} {atto.data} n. {atto.numero} — {atto.titolo[:80]}")
 
-    root = ET.parse(final_xml).getroot()
+    root = ET.parse(xml_path).getroot()
     eids = list_article_eids(root)
     rel_dir = atto_directory(atto)
     articles_meta: list[tuple[str, ArticoloMeta]] = []
@@ -77,7 +83,7 @@ def _process_atto(
 
     for eid in eids:
         num = eid_to_article_num(eid)
-        result = convert_article_to_md(final_xml, atto, num, today)
+        result = convert_article_to_md(xml_path, atto, num, today)
         if result is None:
             continue
         md, art_meta = result
@@ -92,6 +98,23 @@ def _process_atto(
     delta_skipped = writer.stats["skipped"] - skipped_before
     print(f"    → articoli: written={delta_written}, skipped={delta_skipped}")
     return delta_written, delta_skipped
+
+
+def _process_atto(
+    urn: str,
+    dataset_root: Path,
+    xml_cache: Path,
+    writer: RepoWriter,
+    today: str,
+) -> tuple[int, int]:
+    """Orchestratore delta: scarica AKN via URN → sposta in cache → converti."""
+    tmp_xml = _download_to_tmp(urn, xml_cache)
+    atto = build_metadata_from_xml(tmp_xml, fallback_url=build_url_from_urn(urn))
+    final_xml = _xml_cache_path(xml_cache, atto)
+    tmp_xml.replace(final_xml)
+    return process_atto_from_xml(
+        final_xml, writer, today, atto=atto, fallback_url=build_url_from_urn(urn)
+    )
 
 
 def sync_single_atto(
